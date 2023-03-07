@@ -2,6 +2,7 @@ import requests
 import argparse
 import os
 import configparser
+import sys
 
 
 
@@ -44,6 +45,7 @@ def get_movie_info(movie_name, api_key, year=''):
         'api_key': api_key,
         'query': movie_name,
         'year': year,
+        'language': 'zh-CN'
     }
     url = "https://api.themoviedb.org/3/search/movie"
     response = requests.get(url, params=params).json()
@@ -96,7 +98,6 @@ def rename(target, destination_name, source_name=None, season_dir=None, movie_di
         try:
             file_path = os.path.abspath(target)
             parent_path = os.path.dirname(os.path.dirname(file_path))
-            print(parent_path, movie_dir, destination_name)
             os.rename(f"{target}", f"{parent_path}/{movie_dir}/{destination_name}")
         except OSError as e:
             print("error occurred while renaming movie")
@@ -115,19 +116,27 @@ def create_dir(target, season_number=None, movie_name='', year=''):
     create dir at the parent target dir.
     """
     if season_number:
-        created_dir = f"Season {int(season_number):02}"
-        try:
-            os.mkdir(f"{target}/{created_dir}")
-        except FileExistsError:
-            print("target dir already exists.")
+        if os.path.isdir(target):
+            created_dir = f"Season {int(season_number):02}"
+            try:
+                os.mkdir(f"{target}/{created_dir}")
+            except FileExistsError:
+                print("target dir already exists.")
+        else:
+            print("target is not dir")
+            return None
     else:
-        created_dir = f"{movie_name} ({year})"
-        try:
-            file_path = os.path.abspath(target)
-            parent_path = os.path.dirname(os.path.dirname(file_path))
-            os.mkdir(f"{parent_path}/{created_dir}")
-        except FileExistsError:
-            print("target dir already exists.")
+        if os.path.isfile(target):
+            created_dir = f"{movie_name} ({year})"
+            try:
+                file_path = os.path.abspath(target)
+                parent_path = os.path.dirname(os.path.dirname(file_path))
+                os.mkdir(f"{parent_path}/{created_dir}")
+            except FileExistsError:
+                print("target dir already exists.")
+        else:
+            print('target is not file.')
+            return None
     return created_dir
 
 
@@ -135,29 +144,34 @@ def main(api_key):
 
     search_query = parse_arguments().tv
     season_number = parse_arguments().season
-    target_dir = parse_arguments().target
+    target = parse_arguments().target
     movie_name = parse_arguments().movie
     year = parse_arguments().year
 
 
     if movie_name:
         movie_title, year = get_movie_info(movie_name=movie_name, api_key=api_key, year=year)
-        created_dir = create_dir(target_dir , movie_name=movie_title, year=year)
-        suffix_name = target_dir.split('.')[-1]
+        try:
+            created_dir = create_dir(target=target , movie_name=movie_title, year=year)
+        except:
+            sys.exit(1)
+        suffix_name = target.split('.')[-1]
         destination_name = movie_title + "." + suffix_name
-        rename(target=target_dir, destination_name=destination_name, movie_dir=created_dir)
+        rename(target=target, destination_name=destination_name, movie_dir=created_dir)
     else:
         id = get_id(search_query, api_key)
         episodes = get_episodes(id, season_number, api_key)
-        local_episodes = sorted(get_local_episodes(target_dir))
+        local_episodes = sorted(get_local_episodes(target))
         suffix_name = local_episodes[0].split('.')[-1]
-        created_dir = create_dir(target=target_dir, season_number=season_number)
-        
+        try:
+            created_dir = create_dir(target=target, season_number=season_number)
+        except:
+            sys.exit(1)
         if len(episodes) == len(local_episodes):
             for old_episode_name, episode in zip(local_episodes, episodes):
                 new_name = formatted_name(season_number, episode['episode_number']) \
                 + '-' + episode['name'] + '.' + suffix_name
-                rename(target_dir, season_dir=created_dir, source_name=old_episode_name, destination_name=new_name)
+                rename(target, season_dir=created_dir, source_name=old_episode_name, destination_name=new_name)
         else:
             print('error: local episodes number is defferent from the TMDB, check the information.')
 
@@ -169,6 +183,9 @@ if __name__ == '__main__':
     config.read('config.ini')
 
     api_key = config.get('api', 'api_key')
+    if len(api_key) != 32:
+        print("please check the api key")
+        sys.exit(1)
     main(api_key) 
 
 
